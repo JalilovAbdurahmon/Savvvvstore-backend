@@ -41,6 +41,27 @@ const saveUser = (chatId, data) => {
   saveUsers(users);
 };
 
+// ---------- Miniapp (do'kon) tugmasi ----------
+const SHOP_BUTTON_TEXT = { uz: "🛍 Do'konni ochish", ru: "🛍 Открыть магазин" };
+
+const isMiniAppUrlValid = (url) => Boolean(url) && url.startsWith("https://") && url !== "https://yourdomain.com";
+
+const sendShopButton = async (chatId, lang) => {
+  const miniAppUrl = process.env.MINIAPP_URL;
+
+  if (!isMiniAppUrlValid(miniAppUrl)) {
+    // MINIAPP_URL hali sozlanmagan (https bolishi va yourdomain.com bolmasligi kerak)
+    await bot.sendMessage(chatId, t(lang, "orderSoon"));
+    return;
+  }
+
+  await bot.sendMessage(chatId, t(lang, "mainMenu"), {
+    reply_markup: {
+      inline_keyboard: [[{ text: SHOP_BUTTON_TEXT[lang], web_app: { url: miniAppUrl } }]],
+    },
+  });
+};
+
 // ---------- Statik kontakt ma'lumotlari (hamma uchun bir xil) ----------
 const SUPPORT_INFO = {
   phone: "+998900237522", // <-- bu yerga haqiqiy raqamni qo'ying
@@ -186,7 +207,7 @@ export const initBot = () => {
     }
   });
 
-  // ---------- /menu — miniapp ochish (hozircha placeholder) ----------
+  // ---------- /menu — miniapp ochish ----------
   bot.onText(/\/menu/, async (msg) => {
     const chatId = msg.chat.id;
     const user = getUser(chatId);
@@ -196,8 +217,7 @@ export const initBot = () => {
       return;
     }
 
-    // TODO: miniAppUrl tayyor bo'lganda shu yerga web_app tugmasi qo'shiladi
-    await bot.sendMessage(chatId, t(user.lang, "orderSoon"));
+    await sendShopButton(chatId, user.lang);
   });
 
   // ---------- /language — tilni qayta tanlash ----------
@@ -269,7 +289,7 @@ export const initBot = () => {
       const user = getUser(chatId);
       const lang = user?.lang || "uz";
       await bot.answerCallbackQuery(query.id);
-      await bot.sendMessage(chatId, t(lang, "orderSoon"));
+      await sendShopButton(chatId, lang);
     }
   });
 
@@ -282,7 +302,7 @@ export const initBot = () => {
     // ---------- Reply keyboard tugmalari (faqat ro'yxatdan o'tgan foydalanuvchi uchun) ----------
     if (user && user.step === "done" && text) {
       if (text.includes(t(user.lang, "menuShop"))) {
-        await bot.sendMessage(chatId, t(user.lang, "orderSoon"));
+        await sendShopButton(chatId, user.lang);
         return;
       }
 

@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { CATEGORY_KEYS } from "../utils/categories.js";
 
 const productSchema = new mongoose.Schema(
   {
@@ -7,6 +8,12 @@ const productSchema = new mongoose.Schema(
     price: { type: Number, required: true, min: 0 },
     image: { type: String, required: true }, // /uploads/xxx.jpg
     description: { type: String, default: "" },
+    category: {
+      type: String,
+      required: true,
+      enum: CATEGORY_KEYS, // clothes | pants | tshirts | shoes | shorts | others
+      default: "others",
+    },
     isActive: { type: Boolean, default: true }, // miniapp'da ko'rinish/yo'qligi
   },
   { timestamps: true }

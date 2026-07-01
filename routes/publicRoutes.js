@@ -2,13 +2,24 @@ import express from "express";
 import Product from "../models/Product.js";
 import Order from "../models/Order.js";
 import { notifyUser } from "../bot.js";
+import { CATEGORIES, CATEGORY_KEYS } from "../utils/categories.js";
 
 const router = express.Router();
 
+// GET /api/public/categories  (miniapp uchun kategoriyalar royxati, uz/ru nom bilan)
+router.get("/categories", async (req, res) => {
+  res.json(CATEGORIES);
+});
+
 // GET /api/public/products  (miniapp uchun - faqat active mahsulotlar)
+// ?category=pants kabi query bilan filtrlash mumkin
 router.get("/products", async (req, res) => {
   try {
-    const products = await Product.find({ isActive: true }).sort({ createdAt: -1 });
+    const filter = { isActive: true };
+    if (req.query.category && CATEGORY_KEYS.includes(req.query.category)) {
+      filter.category = req.query.category;
+    }
+    const products = await Product.find(filter).sort({ createdAt: -1 });
     res.json(products);
   } catch (error) {
     res.status(500).json({ message: error.message });

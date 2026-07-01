@@ -3,8 +3,14 @@ import Product from "../models/Product.js";
 import { protect } from "../middleware/auth.js";
 import upload from "../middleware/upload.js";
 import { deleteImageFile } from "../utils/fileHelper.js";
+import { CATEGORIES, CATEGORY_KEYS } from "../utils/categories.js";
 
 const router = express.Router();
+
+// GET /api/products/categories  (admin panel uchun kategoriyalar royxati)
+router.get("/categories", protect, (req, res) => {
+  res.json(CATEGORIES);
+});
 
 router.use(protect); // shu fayldagi barcha route'lar uchun admin token shart
 
@@ -24,7 +30,11 @@ const parseSizes = (sizes) => {
 // GET /api/products  (3-chi page: barcha post qilingan mahsulotlar)
 router.get("/", async (req, res) => {
   try {
-    const products = await Product.find().sort({ createdAt: -1 });
+    const filter = {};
+    if (req.query.category && CATEGORY_KEYS.includes(req.query.category)) {
+      filter.category = req.query.category;
+    }
+    const products = await Product.find(filter).sort({ createdAt: -1 });
     res.json(products);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -35,7 +45,7 @@ router.get("/", async (req, res) => {
 // "image" fayl, "name", "price", "sizes" (JSON yoki vergul bilan), "description"
 router.post("/", upload.single("image"), async (req, res) => {
   try {
-    const { name, price, sizes, description } = req.body;
+    const { name, price, sizes, description, category } = req.body;
 
     if (!name || !price || !sizes) {
       return res.status(400).json({ message: "name, price va sizes maydonlari shart" });
@@ -43,12 +53,18 @@ router.post("/", upload.single("image"), async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ message: "Mahsulot rasmi (image) yuborilishi shart" });
     }
+    if (!category || !CATEGORY_KEYS.includes(category)) {
+      return res.status(400).json({
+        message: `category maydoni shart va quyidagilardan biri bo'lishi kerak: ${CATEGORY_KEYS.join(", ")}`,
+      });
+    }
 
     const product = await Product.create({
       name,
       price,
       sizes: parseSizes(sizes),
       description: description || "",
+      category,
       image: buildImageUrl(req.file.filename),
     });
 
@@ -76,8 +92,16 @@ router.put("/:id", upload.single("image"), async (req, res) => {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: "Mahsulot topilmadi" });
 
-    const { name, price, sizes, description, isActive } = req.body;
+    const { name, price, sizes, description, isActive, category } = req.body;
 
+    if (category !== undefined) {
+      if (!CATEGORY_KEYS.includes(category)) {
+        return res.status(400).json({
+          message: `category quyidagilardan biri bo'lishi kerak: ${CATEGORY_KEYS.join(", ")}`,
+        });
+      }
+      product.category = category;
+    }
     if (name !== undefined) product.name = name;
     if (price !== undefined) product.price = price;
     if (description !== undefined) product.description = description;
