@@ -2,6 +2,7 @@ import TelegramBot from "node-telegram-bot-api";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import Order from "./models/Order.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PATH = path.join(__dirname, "users.json");
@@ -42,10 +43,11 @@ const saveUser = (chatId, data) => {
 };
 
 // ---------- Miniapp (do'kon) tugmasi ----------
-const SHOP_BUTTON_TEXT = { uz: "🛍 Do'konni ochish", ru: "🛍 Открыть магазин" };
-
 const isMiniAppUrlValid = (url) => Boolean(url) && url.startsWith("https://") && url !== "https://yourdomain.com";
 
+// Muhim: Mini App faqat "Keyboard button" (persistent reply keyboard) orqali ochilganda
+// tg.sendData() ishlaydi (Telegram cheklovi). Shuning uchun /menu, order_click va h.k.
+// barchasi mainKeyboard()ni qayta yuboradi — alohida inline tugma emas.
 const sendShopButton = async (chatId, lang) => {
   const miniAppUrl = process.env.MINIAPP_URL;
 
@@ -55,11 +57,7 @@ const sendShopButton = async (chatId, lang) => {
     return;
   }
 
-  await bot.sendMessage(chatId, t(lang, "mainMenu"), {
-    reply_markup: {
-      inline_keyboard: [[{ text: SHOP_BUTTON_TEXT[lang], web_app: { url: miniAppUrl } }]],
-    },
-  });
+  await bot.sendMessage(chatId, t(lang, "mainMenu"), mainKeyboard(lang));
 };
 
 // ---------- Statik kontakt ma'lumotlari (hamma uchun bir xil) ----------
@@ -92,6 +90,12 @@ const TEXTS = {
     menuContact: "Kontakt",
     contactInfo:
       "☎️ Biz bilan bog'lanish:\n\n📞 Telefon: {phone}\n💬 Telegram: {username}\n🕐 Ish vaqti: {hours}",
+    askLocation: "📍 Endi manzilingizni (joylashuvingizni) yuboring 👇",
+    shareLocation: "📍 Joylashuvni yuborish",
+    orderPlaced:
+      "✅ Buyurtmangiz qabul qilindi!\n\nJami summa: {total} so'm\nTez orada siz bilan bog'lanamiz.",
+    orderError: "❌ Buyurtmani saqlashda xatolik yuz berdi. Iltimos, qayta urinib ko'ring.",
+    cartEmpty: "Savat bo'sh, avval Menyudan mahsulot tanlang.",
   },
   ru: {
     chooseLang: "Tilni tanlang / Выберите язык:",
@@ -112,6 +116,12 @@ const TEXTS = {
     menuContact: "Контакт",
     contactInfo:
       "☎️ Связаться с нами:\n\n📞 Телефон: {phone}\n💬 Telegram: {username}\n🕐 Время работы:\n{hours}",
+    askLocation: "📍 Теперь отправьте вашу геолокацию 👇",
+    shareLocation: "📍 Отправить геолокацию",
+    orderPlaced:
+      "✅ Ваш заказ принят!\n\nОбщая сумма: {total} сум\nМы скоро свяжемся с вами.",
+    orderError: "❌ Ошибка при сохранении заказа. Попробуйте ещё раз.",
+    cartEmpty: "Корзина пуста, сначала выберите товар в Меню.",
   },
 };
 
@@ -308,6 +318,46 @@ export const initBot = () => {
     const text = msg.text;
     const user = getUser(chatId);
 
+    // ---------- Mini App'dan savat (zakaz) ma'lumoti kelganda ----------
+    if (msg.web_app_data) {
+      console.log("🟡 web_app_data keldi:", msg.web_app_data.data);
+
+      if (!user || user.step !== "done") {
+        console.log("🔴 Foydalanuvchi ro'yxatdan o'tmagan, chatId:", chatId);
+        await bot.sendMessage(chatId, t("uz", "notRegistered"));
+        return;
+      }
+
+      let payload;
+      try {
+        payload = JSON.parse(msg.web_app_data.data);
+      } catch (error) {
+        console.error("🔴 web_app_data parse xatosi:", error.message);
+        return;
+      }
+
+      if (!payload?.items || !Array.isArray(payload.items) || payload.items.length === 0) {
+        console.log("🔴 payload.items bo'sh yoki noto'g'ri:", payload);
+        await bot.sendMessage(chatId, t(user.lang, "cartEmpty"));
+        return;
+      }
+
+      console.log("🟢 payload to'g'ri, lokatsiya so'ralmoqda. Items soni:", payload.items.length);
+
+      // Ism va telefon ro'yxatdan o'tishda saqlangan, faqat lokatsiya yetishmayapti
+      userState.set(chatId, { step: "awaiting_location", lang: user.lang, pendingItems: payload.items });
+
+      await bot.sendMessage(chatId, t(user.lang, "askLocation"), {
+        reply_markup: {
+          keyboard: [[{ text: t(user.lang, "shareLocation"), request_location: true }]],
+          resize_keyboard: true,
+          one_time_keyboard: true,
+        },
+      });
+      console.log("🟢 askLocation xabari yuborildi");
+      return;
+    }
+
     // ---------- Reply keyboard tugmalari (faqat ro'yxatdan o'tgan foydalanuvchi uchun) ----------
     if (user && user.step === "done" && text) {
       if (text.includes(t(user.lang, "menuShop"))) {
@@ -391,6 +441,51 @@ export const initBot = () => {
       await setUserCommands(chatId, lang);
     } catch (error) {
       console.error("Kontaktni qabul qilishda xatolik:", error.message);
+    }
+  });
+
+  // ---------- Lokatsiya yuborilganda — savatdagi mahsulotlar bilan zakaz yaratiladi ----------
+  bot.on("location", async (msg) => {
+    const chatId = msg.chat.id;
+    const state = userState.get(chatId);
+    console.log("🟡 location keldi, state:", state);
+    if (!state || state.step !== "awaiting_location") {
+      console.log("🔴 state noto'g'ri yoki yo'q, location e'tiborga olinmadi");
+      return;
+    }
+
+    const user = getUser(chatId);
+    const lang = state.lang;
+    const { latitude, longitude } = msg.location;
+    const address = `https://maps.google.com/?q=${latitude},${longitude}`;
+
+    const totalPrice = state.pendingItems.reduce(
+      (sum, item) => sum + item.price * (item.quantity || 1),
+      0
+    );
+
+    try {
+      await Order.create({
+        telegramId: String(chatId),
+        username: msg.from?.username || "",
+        firstName: user?.name || "", // ism — ro'yxatdan o'tishda saqlangan
+        phone: user?.phone || "", // telefon — ro'yxatdan o'tishda saqlangan
+        address, // lokatsiya — hozir yuborilgan
+        items: state.pendingItems,
+        totalPrice,
+        status: "pending",
+      });
+
+      userState.delete(chatId);
+
+      await bot.sendMessage(
+        chatId,
+        t(lang, "orderPlaced", { total: totalPrice.toLocaleString() }),
+        mainKeyboard(lang)
+      );
+    } catch (error) {
+      console.error("Lokatsiya orqali zakaz yaratishda xatolik:", error.message);
+      await bot.sendMessage(chatId, t(lang, "orderError"), mainKeyboard(lang));
     }
   });
 
