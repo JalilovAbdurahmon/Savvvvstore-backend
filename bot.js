@@ -124,16 +124,25 @@ const t = (lang, key, vars = {}) => {
 };
 
 // ---------- Asosiy reply keyboard (pastki "⊞" tugma orqali ochiladi/yopiladi) ----------
-const mainKeyboard = (lang) => ({
-  reply_markup: {
-    keyboard: [
-      [{ text: `🛍 ${t(lang, "menuShop")}` }],
-      [{ text: `🌐 ${t(lang, "menuLang")}` }, { text: `📞 ${t(lang, "menuContact")}` }],
-    ],
-    resize_keyboard: true,
-    // is_persistent: true,
-  },
-});
+// "Menyu" tugmasi endi web_app orqali to'g'ridan-to'g'ri Mini App'ni ochadi (xabar yubormaydi)
+const mainKeyboard = (lang) => {
+  const miniAppUrl = process.env.MINIAPP_URL;
+
+  const shopButton = isMiniAppUrlValid(miniAppUrl)
+    ? { text: `🛍 ${t(lang, "menuShop")}`, web_app: { url: miniAppUrl } }
+    : { text: `🛍 ${t(lang, "menuShop")}` }; // MINIAPP_URL hali sozlanmagan bo'lsa, oddiy tugma qoladi
+
+  return {
+    reply_markup: {
+      keyboard: [
+        [shopButton],
+        [{ text: `🌐 ${t(lang, "menuLang")}` }, { text: `📞 ${t(lang, "menuContact")}` }],
+      ],
+      resize_keyboard: true,
+      // is_persistent: true,
+    },
+  };
+};
 
 // ---------- Har bir foydalanuvchi uchun tilga mos komandalar menyusini o'rnatish ----------
 const setUserCommands = async (chatId, lang) => {
