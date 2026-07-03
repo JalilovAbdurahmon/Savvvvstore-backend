@@ -63,4 +63,16 @@ router.put("/:id/cancel", async (req, res) => {
   }
 });
 
+// DELETE /api/orders/:id  (History page'dan zakazni butunlay o'chirish)
+router.delete("/:id", async (req, res) => {
+  try {
+    const order = await Order.findByIdAndDelete(req.params.id);
+    if (!order) return res.status(404).json({ message: "Zakaz topilmadi" });
+
+    res.json({ message: "Zakaz o'chirildi", id: order._id });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 export default router;
