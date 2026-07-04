@@ -21,7 +21,7 @@ router.get("/summary", protect, async (req, res) => {
     const totalProducts = await Product.countDocuments();
     const totalActiveProducts = await Product.countDocuments({ isActive: true });
 
-    // eng ko'p sotilgan mahsulotlar (top 5)
+    // eng ko'p sotilgan mahsulotlar (top 10)
     const productSalesMap = {};
     completedOrders.forEach((order) => {
       order.items.forEach((item) => {
@@ -35,7 +35,7 @@ router.get("/summary", protect, async (req, res) => {
     });
     const topProducts = Object.values(productSalesMap)
       .sort((a, b) => b.quantity - a.quantity)
-      .slice(0, 5);
+      .slice(0, 10);
 
     // oxirgi 7 kunlik sotuvlar grafigi uchun
     const last7Days = [];
