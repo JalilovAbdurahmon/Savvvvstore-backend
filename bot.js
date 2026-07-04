@@ -45,6 +45,10 @@ const saveUser = (chatId, data) => {
 // ---------- Miniapp (do'kon) tugmasi ----------
 const isMiniAppUrlValid = (url) => Boolean(url) && url.startsWith("https://") && url !== "https://yourdomain.com";
 
+// Foydalanuvchi botda tanlagan tilni Mini App'ga ?lang= orqali uzatamiz,
+// shunda Mini App ham bot bilan bir xil tilda ochiladi
+const buildMiniAppUrl = (baseUrl, lang) => `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}lang=${lang}`;
+
 // Muhim: Mini App faqat "Keyboard button" (persistent reply keyboard) orqali ochilganda
 // tg.sendData() ishlaydi (Telegram cheklovi). Shuning uchun /menu, order_click va h.k.
 // barchasi mainKeyboard()ni qayta yuboradi — alohida inline tugma emas.
@@ -139,7 +143,7 @@ const mainKeyboard = (lang) => {
   const miniAppUrl = process.env.MINIAPP_URL;
 
   const shopButton = isMiniAppUrlValid(miniAppUrl)
-    ? { text: `🛍 ${t(lang, "menuShop")}`, web_app: { url: miniAppUrl } }
+    ? { text: `🛍 ${t(lang, "menuShop")}`, web_app: { url: buildMiniAppUrl(miniAppUrl, lang) } }
     : { text: `🛍 ${t(lang, "menuShop")}` }; // MINIAPP_URL hali sozlanmagan bo'lsa, oddiy tugma qoladi
 
   return {
