@@ -47,6 +47,15 @@ router.post("/setup", async (req, res) => {
   }
 });
 
+router.get("/setup", protect, async (req, res) => {
+  try {
+    const registers = await Admin.find().select("-password").sort({ createdAt: -1 });
+    res.json(registers);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // POST /api/auth/login
 router.post("/login", async (req, res) => {
   try {
