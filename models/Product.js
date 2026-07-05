@@ -6,7 +6,22 @@ const productSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     sizes: { type: [String], required: true, default: [] }, // masalan ["S","M","L"]
     price: { type: Number, required: true, min: 0 },
-    image: { type: String, required: true }, // /uploads/xxx.jpg
+
+    // "image" — asosiy (birinchi) rasm, eski kod (MiniApp, bot, savat va h.k.)
+    // shuni ishlatishda davom etadi, hech narsa buzilmaydi
+    image: { type: String, required: true }, // "/uploads/xxx.jpg"
+
+    // "images" — mahsulotning barcha rasmlari (1 tadan 3 tagacha), tartib bo'yicha
+    // images[0] har doim "image" bilan bir xil bo'ladi
+    images: {
+      type: [String], // ["/uploads/xxx.jpg", "/uploads/yyy.jpg", ...]
+      validate: {
+        validator: (arr) => arr.length >= 1 && arr.length <= 3,
+        message: "Mahsulotda 1 tadan 3 tagacha rasm bo'lishi kerak",
+      },
+      required: true,
+    },
+
     description: { type: String, default: "" },
     category: {
       type: String,

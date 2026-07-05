@@ -14,8 +14,6 @@ router.get("/categories", protect, (req, res) => {
 
 router.use(protect); // shu fayldagi barcha route'lar uchun admin token shart
 
-const buildImageUrl = (filename) => `/uploads/${filename}`;
-
 const parseSizes = (sizes) => {
   try {
     return Array.isArray(sizes) ? sizes : JSON.parse(sizes);
@@ -26,6 +24,8 @@ const parseSizes = (sizes) => {
       .filter(Boolean);
   }
 };
+
+const buildImageUrl = (filename) => `/uploads/${filename}`;
 
 // GET /api/products  (3-chi page: barcha post qilingan mahsulotlar)
 router.get("/", async (req, res) => {
@@ -42,16 +42,19 @@ router.get("/", async (req, res) => {
 });
 
 // POST /api/products  (2-chi page: yangi mahsulot qo'shish/"post qilish")
-// "image" fayl, "name", "price", "sizes" (JSON yoki vergul bilan), "description"
-router.post("/", upload.single("image"), async (req, res) => {
+// "images" — 1 tadan 3 tagacha fayl, "name", "price", "sizes" (JSON yoki vergul bilan), "description"
+router.post("/", upload.array("images", 3), async (req, res) => {
   try {
     const { name, price, sizes, description, category } = req.body;
 
     if (!name || !price || !sizes) {
       return res.status(400).json({ message: "name, price va sizes maydonlari shart" });
     }
-    if (!req.file) {
-      return res.status(400).json({ message: "Mahsulot rasmi (image) yuborilishi shart" });
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ message: "Kamida 1 ta mahsulot rasmi (images) yuborilishi shart" });
+    }
+    if (req.files.length > 3) {
+      return res.status(400).json({ message: "Mahsulotga eng ko'pi bilan 3 ta rasm yuklash mumkin" });
     }
     if (!category || !CATEGORY_KEYS.includes(category)) {
       return res.status(400).json({
@@ -59,16 +62,18 @@ router.post("/", upload.single("image"), async (req, res) => {
       });
     }
 
+    const images = req.files.map((f) => buildImageUrl(f.filename));
+
     const product = await Product.create({
       name,
       price,
       sizes: parseSizes(sizes),
       description: description || "",
       category,
-      image: buildImageUrl(req.file.filename),
+      images,
+      image: images[0], // orqaga moslik uchun (MiniApp, bot, savat va h.k.)
     });
 
-    // post qilingan zahoti shu yer (3-chi page) va miniapp bitta Product kolleksiyadan o'qigani uchun avtomatik ko'rinadi
     res.status(201).json(product);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -86,8 +91,10 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// PUT /api/products/:id  (yangi rasm yuklansa eskisi o'chadi, bo'lmasa eskisi qoladi)
-router.put("/:id", upload.single("image"), async (req, res) => {
+// PUT /api/products/:id
+// Agar yangi rasm(lar) yuklansa — ESKI RASMLARNING HAMMASI diskdan o'chiriladi
+// va yangi to'plam (1-3 ta) bilan to'liq almashtiriladi. Yangi rasm yuborilmasa, eskilari qoladi.
+router.put("/:id", upload.array("images", 3), async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: "Mahsulot topilmadi" });
@@ -108,10 +115,16 @@ router.put("/:id", upload.single("image"), async (req, res) => {
     if (isActive !== undefined) product.isActive = isActive;
     if (sizes !== undefined) product.sizes = parseSizes(sizes);
 
-    // faqat yangi rasm yuklanganda eski rasm almashtiriladi va eskisi o'chiriladi
-    if (req.file) {
-      deleteImageFile(product.image);
-      product.image = buildImageUrl(req.file.filename);
+    if (req.files && req.files.length > 0) {
+      if (req.files.length > 3) {
+        return res.status(400).json({ message: "Mahsulotga eng ko'pi bilan 3 ta rasm yuklash mumkin" });
+      }
+      // eski rasmlarning barchasini diskdan o'chiramiz
+      product.images.forEach((imgPath) => deleteImageFile(imgPath));
+
+      const images = req.files.map((f) => buildImageUrl(f.filename));
+      product.images = images;
+      product.image = images[0];
     }
 
     await product.save();
@@ -127,7 +140,7 @@ router.delete("/:id", async (req, res) => {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: "Mahsulot topilmadi" });
 
-    deleteImageFile(product.image);
+    product.images.forEach((imgPath) => deleteImageFile(imgPath));
     await product.deleteOne();
 
     res.json({ message: "Mahsulot o'chirildi" });

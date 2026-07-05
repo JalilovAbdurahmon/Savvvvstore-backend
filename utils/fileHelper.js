@@ -2,19 +2,15 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// imagePath misol: /uploads/product-12345.jpg
+// imagePath misol: "/uploads/product-12345.jpg"
 export const deleteImageFile = (imagePath) => {
   if (!imagePath) return;
-  try {
-    const fileName = path.basename(imagePath);
-    const fullPath = path.join(__dirname, "..", "uploads", fileName);
-    if (fs.existsSync(fullPath)) {
-      fs.unlinkSync(fullPath);
+  const filePath = path.join(__dirname, "..", imagePath);
+  fs.unlink(filePath, (err) => {
+    if (err && err.code !== "ENOENT") {
+      console.error("Rasmni o'chirishda xatolik:", err.message);
     }
-  } catch (err) {
-    console.error("Rasmni o'chirishda xatolik:", err.message);
-  }
+  });
 };
