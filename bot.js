@@ -94,12 +94,12 @@ const TEXTS = {
     menuContact: "Kontakt",
     contactInfo:
       "☎️ Biz bilan bog'lanish:\n\n📞 Telefon: {phone}\n💬 Telegram: {username}\n🕐 Ish vaqti: {hours}",
-    askLocation: "📍 Endi manzilingizni (joylashuvingizni) yuboring 👇",
-    shareLocation: "📍 Joylashuvni yuborish",
     orderPlaced:
-      "✅ Buyurtmangiz qabul qilindi!\n\nJami summa: {total} so'm\nTez orada siz bilan bog'lanamiz.",
+      "✅ Buyurtmangiz qabul qilindi!\n\n📍 Manzil: {address}\n💰 Jami summa: {total} so'm\nTez orada siz bilan bog'lanamiz.",
     orderError: "❌ Buyurtmani saqlashda xatolik yuz berdi. Iltimos, qayta urinib ko'ring.",
     cartEmpty: "Savat bo'sh, avval Menyudan mahsulot tanlang.",
+    locationMissing:
+      "❌ Manzil aniqlanmadi. Iltimos, Menyuga qayting va buyurtmani xaritada manzilni tasdiqlab qayta yuboring.",
   },
   ru: {
     chooseLang: "Tilni tanlang / Выберите язык:",
@@ -120,12 +120,12 @@ const TEXTS = {
     menuContact: "Контакт",
     contactInfo:
       "☎️ Связаться с нами:\n\n📞 Телефон: {phone}\n💬 Telegram: {username}\n🕐 Время работы:\n{hours}",
-    askLocation: "📍 Теперь отправьте вашу геолокацию 👇",
-    shareLocation: "📍 Отправить геолокацию",
     orderPlaced:
-      "✅ Ваш заказ принят!\n\nОбщая сумма: {total} сум\nМы скоро свяжемся с вами.",
+      "✅ Ваш заказ принят!\n\n📍 Адрес: {address}\n💰 Общая сумма: {total} сум\nМы скоро свяжемся с вами.",
     orderError: "❌ Ошибка при сохранении заказа. Попробуйте ещё раз.",
     cartEmpty: "Корзина пуста, сначала выберите товар в Меню.",
+    locationMissing:
+      "❌ Адрес не определён. Вернитесь в Меню и подтвердите адрес на карте, затем отправьте заказ снова.",
   },
 };
 
@@ -322,12 +322,12 @@ export const initBot = () => {
     const text = msg.text;
     const user = getUser(chatId);
 
-    // ---------- Mini App'dan savat (zakaz) ma'lumoti kelganda ----------
+    // ---------- Mini App'dan savat + manzil (zakaz) ma'lumoti kelganda ----------
+    // Endi Mini App ichida foydalanuvchi manzilni xaritada tasdiqlab bo'lgach,
+    // items va location BIRGALIKDA bitta paketda keladi — bot alohida
+    // location so'rab, kutib o'tirishi shart emas, zakaz darhol yaratiladi.
     if (msg.web_app_data) {
-      console.log("🟡 web_app_data keldi:", msg.web_app_data.data);
-
       if (!user || user.step !== "done") {
-        console.log("🔴 Foydalanuvchi ro'yxatdan o'tmagan, chatId:", chatId);
         await bot.sendMessage(chatId, t("uz", "notRegistered"));
         return;
       }
@@ -336,29 +336,54 @@ export const initBot = () => {
       try {
         payload = JSON.parse(msg.web_app_data.data);
       } catch (error) {
-        console.error("🔴 web_app_data parse xatosi:", error.message);
+        console.error("web_app_data parse xatosi:", error.message);
         return;
       }
 
       if (!payload?.items || !Array.isArray(payload.items) || payload.items.length === 0) {
-        console.log("🔴 payload.items bo'sh yoki noto'g'ri:", payload);
         await bot.sendMessage(chatId, t(user.lang, "cartEmpty"));
         return;
       }
 
-      console.log("🟢 payload to'g'ri, lokatsiya so'ralmoqda. Items soni:", payload.items.length);
+      const { latitude, longitude, address: addressText } = payload.location || {};
+      if (typeof latitude !== "number" || typeof longitude !== "number") {
+        // Mini App manzilni tasdiqlamasdan yubormasligi kerak, lekin himoya uchun tekshiramiz
+        await bot.sendMessage(chatId, t(user.lang, "locationMissing"));
+        return;
+      }
 
-      // Ism va telefon ro'yxatdan o'tishda saqlangan, faqat lokatsiya yetishmayapti
-      userState.set(chatId, { step: "awaiting_location", lang: user.lang, pendingItems: payload.items });
+      const mapLink = `https://maps.google.com/?q=${latitude},${longitude}`;
+      const address = addressText ? `${addressText} (${mapLink})` : mapLink;
 
-      await bot.sendMessage(chatId, t(user.lang, "askLocation"), {
-        reply_markup: {
-          keyboard: [[{ text: t(user.lang, "shareLocation"), request_location: true }]],
-          resize_keyboard: true,
-          one_time_keyboard: true,
-        },
-      });
-      console.log("🟢 askLocation xabari yuborildi");
+      const totalPrice = payload.items.reduce(
+        (sum, item) => sum + item.price * (item.quantity || 1),
+        0
+      );
+
+      try {
+        await Order.create({
+          telegramId: String(chatId),
+          username: msg.from?.username || "",
+          firstName: user.name || "", // ism — ro'yxatdan o'tishda saqlangan
+          phone: user.phone || "", // telefon — ro'yxatdan o'tishda saqlangan
+          address, // manzil — Mini App xaritasida hozir tasdiqlangan
+          items: payload.items,
+          totalPrice,
+          status: "pending",
+        });
+
+        await bot.sendMessage(
+          chatId,
+          t(user.lang, "orderPlaced", {
+            address: addressText || mapLink,
+            total: totalPrice.toLocaleString(),
+          }),
+          mainKeyboard(user.lang)
+        );
+      } catch (error) {
+        console.error("Zakaz yaratishda xatolik:", error.message);
+        await bot.sendMessage(chatId, t(user.lang, "orderError"), mainKeyboard(user.lang));
+      }
       return;
     }
 
@@ -445,51 +470,6 @@ export const initBot = () => {
       await setUserCommands(chatId, lang);
     } catch (error) {
       console.error("Kontaktni qabul qilishda xatolik:", error.message);
-    }
-  });
-
-  // ---------- Lokatsiya yuborilganda — savatdagi mahsulotlar bilan zakaz yaratiladi ----------
-  bot.on("location", async (msg) => {
-    const chatId = msg.chat.id;
-    const state = userState.get(chatId);
-    console.log("🟡 location keldi, state:", state);
-    if (!state || state.step !== "awaiting_location") {
-      console.log("🔴 state noto'g'ri yoki yo'q, location e'tiborga olinmadi");
-      return;
-    }
-
-    const user = getUser(chatId);
-    const lang = state.lang;
-    const { latitude, longitude } = msg.location;
-    const address = `https://maps.google.com/?q=${latitude},${longitude}`;
-
-    const totalPrice = state.pendingItems.reduce(
-      (sum, item) => sum + item.price * (item.quantity || 1),
-      0
-    );
-
-    try {
-      await Order.create({
-        telegramId: String(chatId),
-        username: msg.from?.username || "",
-        firstName: user?.name || "", // ism — ro'yxatdan o'tishda saqlangan
-        phone: user?.phone || "", // telefon — ro'yxatdan o'tishda saqlangan
-        address, // lokatsiya — hozir yuborilgan
-        items: state.pendingItems,
-        totalPrice,
-        status: "pending",
-      });
-
-      userState.delete(chatId);
-
-      await bot.sendMessage(
-        chatId,
-        t(lang, "orderPlaced", { total: totalPrice.toLocaleString() }),
-        mainKeyboard(lang)
-      );
-    } catch (error) {
-      console.error("Lokatsiya orqali zakaz yaratishda xatolik:", error.message);
-      await bot.sendMessage(chatId, t(lang, "orderError"), mainKeyboard(lang));
     }
   });
 
