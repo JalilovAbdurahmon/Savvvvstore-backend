@@ -25,6 +25,20 @@ const parseSizes = (sizes) => {
   }
 };
 
+// "existingImages" — JSON massiv (yoki vergul bilan ajratilgan) ko'rinishida
+// keladi: EditModal'da foydalanuvchi o'chirmagan ESKI rasmlar ro'yxati
+const parseExistingImages = (value) => {
+  try {
+    const parsed = Array.isArray(value) ? value : JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return String(value)
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+};
+
 const buildImageUrl = (filename) => `/uploads/${filename}`;
 
 // GET /api/products  (3-chi page: barcha post qilingan mahsulotlar)
@@ -92,14 +106,31 @@ router.get("/:id", async (req, res) => {
 });
 
 // PUT /api/products/:id
-// Agar yangi rasm(lar) yuklansa — ESKI RASMLARNING HAMMASI diskdan o'chiriladi
-// va yangi to'plam (1-3 ta) bilan to'liq almashtiriladi. Yangi rasm yuborilmasa, eskilari qoladi.
+//
+// Rasmlar bilan ishlash logikasi:
+// - "existingImages" maydoni yuborilsa (JSON massiv, masalan '["/uploads/a.jpg","/uploads/b.jpg"]'):
+//     shu ro'yxat "saqlanadigan eski rasmlar" deb qabul qilinadi (foydalanuvchi ba'zilarini
+//     × bilan o'chirgan bo'lishi mumkin). Faqat product.images ichida haqiqatan mavjud
+//     bo'lganlari qabul qilinadi (xavfsizlik uchun tashqi/notanish yo'llar rad etiladi).
+// - Yangi yuklangan fayllar ("images") shu saqlangan eskilarning KETIDAN qo'shiladi.
+// - Yakuniy massiv (eskilar + yangilar) 1 tadan 3 tagacha bo'lishi shart.
+// - Natijaviy ro'yxatda qolmagan eski rasmlar diskdan o'chiriladi.
+// - Agar "existingImages" yuborilmasa — eski (orqaga moslik) xatti-harakat: yangi rasm(lar)
+//   kelsa, hammasi to'liq almashtiriladi; kelmasa, eskilari o'zgarishsiz qoladi.
 router.put("/:id", upload.array("images", 3), async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: "Mahsulot topilmadi" });
 
-    const { name, price, sizes, description, isActive, category } = req.body;
+    const {
+      name,
+      price,
+      sizes,
+      description,
+      isActive,
+      category,
+      existingImages,
+    } = req.body;
 
     if (category !== undefined) {
       if (!CATEGORY_KEYS.includes(category)) {
@@ -115,16 +146,42 @@ router.put("/:id", upload.array("images", 3), async (req, res) => {
     if (isActive !== undefined) product.isActive = isActive;
     if (sizes !== undefined) product.sizes = parseSizes(sizes);
 
-    if (req.files && req.files.length > 0) {
-      if (req.files.length > 3) {
+    const newFiles = req.files && req.files.length ? req.files : [];
+    if (newFiles.length > 3) {
+      return res.status(400).json({ message: "Mahsulotga eng ko'pi bilan 3 ta rasm yuklash mumkin" });
+    }
+    const newImageUrls = newFiles.map((f) => buildImageUrl(f.filename));
+
+    let finalImages = product.images;
+
+    if (existingImages !== undefined) {
+      // Faqat product.images ichida haqiqatan mavjud bo'lgan yo'llarni qabul qilamiz
+      const keptImages = parseExistingImages(existingImages).filter((img) =>
+        product.images.includes(img)
+      );
+
+      finalImages = [...keptImages, ...newImageUrls];
+
+      if (finalImages.length === 0) {
+        return res.status(400).json({ message: "Mahsulotda kamida 1 ta rasm bo'lishi kerak" });
+      }
+      if (finalImages.length > 3) {
         return res.status(400).json({ message: "Mahsulotga eng ko'pi bilan 3 ta rasm yuklash mumkin" });
       }
-      // eski rasmlarning barchasini diskdan o'chiramiz
-      product.images.forEach((imgPath) => deleteImageFile(imgPath));
+    } else if (newFiles.length > 0) {
+      // Orqaga moslik: existingImages yuborilmagan, lekin yangi fayl(lar) kelgan —
+      // eski xatti-harakat bo'yicha hammasi to'liq almashtiriladi
+      finalImages = newImageUrls;
+    }
+    // aks holda (existingImages yo'q va newFiles yo'q) — product.images o'zgarishsiz qoladi
 
-      const images = req.files.map((f) => buildImageUrl(f.filename));
-      product.images = images;
-      product.image = images[0];
+    if (finalImages !== product.images) {
+      // ro'yxatdan chiqib qolgan eski rasmlarni diskdan o'chiramiz
+      const removed = product.images.filter((img) => !finalImages.includes(img));
+      removed.forEach((imgPath) => deleteImageFile(imgPath));
+
+      product.images = finalImages;
+      product.image = finalImages[0];
     }
 
     await product.save();
