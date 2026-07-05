@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
+import Admin from "../models/Admin.js";
 
-export const protect = (req, res, next) => {
+export const protect = async (req, res, next) => {
   let token;
   const authHeader = req.headers.authorization;
 
@@ -14,7 +15,18 @@ export const protect = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.admin = decoded; // { id, username }
+
+    // Bazadan qayta tekshiramiz — shunda admin o'chirilgan/bloklangan bo'lsa,
+    // eski token muddati tugashini kutmasdan darhol kirish rad etiladi
+    const admin = await Admin.findById(decoded.id).select("-password");
+    if (!admin) {
+      return res.status(401).json({ message: "Admin topilmadi" });
+    }
+    if (!admin.isActive) {
+      return res.status(403).json({ message: "Sizning admin panelga kirish huquqingiz bloklangan" });
+    }
+
+    req.admin = admin; // { id, username, isActive, ... }
     next();
   } catch (error) {
     return res.status(401).json({ message: "Token yaroqsiz yoki muddati o'tgan" });
