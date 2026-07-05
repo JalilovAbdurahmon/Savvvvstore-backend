@@ -23,13 +23,19 @@ router.post("/setup", async (req, res) => {
       return res.status(403).json({ message: "setupSecret noto'g'ri" });
     }
 
-    const existingAdmin = await Admin.findOne();
-    if (existingAdmin) {
-      return res.status(400).json({ message: "Admin allaqachon yaratilgan. Bu endpoint faqat 1 marta ishlatiladi." });
+    const maxAdmins = parseInt(process.env.MAX_ADMINS) || 1;
+    const adminCount = await Admin.countDocuments();
+    if (adminCount >= maxAdmins) {
+      return res.status(400).json({ message: `Admin limiti (${maxAdmins}) ga yetildi` });
     }
 
     if (!username || !password) {
       return res.status(400).json({ message: "username va password shart" });
+    }
+
+    const existingAdmin = await Admin.findOne({ username });
+    if (existingAdmin) {
+      return res.status(400).json({ message: "Bu username bilan admin allaqachon mavjud" });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
