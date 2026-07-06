@@ -21,19 +21,26 @@ router.get("/summary", protect, async (req, res) => {
     const totalProducts = await Product.countDocuments();
     const totalActiveProducts = await Product.countDocuments({ isActive: true });
 
-    // eng ko'p sotilgan mahsulotlar (barchasi, kamayish tartibida)
-    const productSalesMap = {};
+    // eng ko'p sotilgan mahsulotlar — DO'KONDAGI BARCHA mahsulotlar ko'rsatiladi,
+    // sotilmaganlari 0 bilan, hammasi sotilgan miqdoriga qarab kamayish tartibida
+    const allProducts = await Product.find();
+
+    const salesMap = {}; // key: mahsulot _id (string), qiymat: { quantity, revenue }
     completedOrders.forEach((order) => {
       order.items.forEach((item) => {
-        const key = item.name;
-        if (!productSalesMap[key]) {
-          productSalesMap[key] = { name: item.name, quantity: 0, revenue: 0 };
-        }
-        productSalesMap[key].quantity += item.quantity || 1;
-        productSalesMap[key].revenue += item.price * (item.quantity || 1);
+        const key = item.product ? String(item.product) : `name:${item.name}`;
+        if (!salesMap[key]) salesMap[key] = { quantity: 0, revenue: 0 };
+        salesMap[key].quantity += item.quantity || 1;
+        salesMap[key].revenue += item.price * (item.quantity || 1);
       });
     });
-    const topProducts = Object.values(productSalesMap).sort((a, b) => b.quantity - a.quantity);
+
+    const topProducts = allProducts
+      .map((p) => {
+        const sales = salesMap[String(p._id)] || { quantity: 0, revenue: 0 };
+        return { name: p.name, quantity: sales.quantity, revenue: sales.revenue };
+      })
+      .sort((a, b) => b.quantity - a.quantity);
 
     // oxirgi 7 kunlik sotuvlar grafigi uchun
     const last7Days = [];
