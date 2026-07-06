@@ -59,7 +59,7 @@ router.get("/", async (req, res) => {
 // "images" — 1 tadan 3 tagacha fayl, "name", "price", "sizes" (JSON yoki vergul bilan), "description"
 router.post("/", upload.array("images", 3), async (req, res) => {
   try {
-    const { name, price, sizes, description, category } = req.body;
+    const { name, price, sizes, category } = req.body;
 
     if (!name || !price || !sizes) {
       return res.status(400).json({ message: "name, price va sizes maydonlari shart" });
@@ -82,7 +82,6 @@ router.post("/", upload.array("images", 3), async (req, res) => {
       name,
       price,
       sizes: parseSizes(sizes),
-      description: description || "",
       category,
       images,
       image: images[0], // orqaga moslik uchun (MiniApp, bot, savat va h.k.)
@@ -126,7 +125,6 @@ router.put("/:id", upload.array("images", 3), async (req, res) => {
       name,
       price,
       sizes,
-      description,
       isActive,
       category,
       existingImages,
@@ -142,7 +140,6 @@ router.put("/:id", upload.array("images", 3), async (req, res) => {
     }
     if (name !== undefined) product.name = name;
     if (price !== undefined) product.price = price;
-    if (description !== undefined) product.description = description;
     if (isActive !== undefined) product.isActive = isActive;
     if (sizes !== undefined) product.sizes = parseSizes(sizes);
 
