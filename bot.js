@@ -1,45 +1,25 @@
 import TelegramBot from "node-telegram-bot-api";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 import Order from "./models/Order.js";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.join(__dirname, "users.json");
+import User from "./models/User.js";
 
 let bot = null;
 
-// Vaqtinchalik holat (faqat onboarding jarayoni uchun, RAM da)
+// Vaqtinchalik holat (faqat onboarding jarayoni uchun, RAM da) — bu doimiy
+// ma'lumot emas, shuning uchun bazaga yozilmaydi
 // step: "lang" | "name" | "phone" | "choose_lang_only"
 const userState = new Map();
 
-// ---------- Doimiy saqlanadigan foydalanuvchilar bazasi (JSON fayl) ----------
-const loadUsers = () => {
-  try {
-    if (!fs.existsSync(DB_PATH)) return {};
-    const raw = fs.readFileSync(DB_PATH, "utf-8");
-    return raw ? JSON.parse(raw) : {};
-  } catch (error) {
-    console.error("users.json o'qishda xatolik:", error.message);
-    return {};
-  }
+// ---------- Foydalanuvchilar bazasi endi MongoDB'da ----------
+const getUser = async (chatId) => {
+  return User.findOne({ telegramId: String(chatId) });
 };
 
-const saveUsers = (data) => {
-  try {
-    fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), "utf-8");
-  } catch (error) {
-    console.error("users.json yozishda xatolik:", error.message);
-  }
-};
-
-let users = loadUsers();
-
-const getUser = (chatId) => users[chatId];
-
-const saveUser = (chatId, data) => {
-  users[chatId] = { ...users[chatId], ...data };
-  saveUsers(users);
+const saveUser = async (chatId, data) => {
+  return User.findOneAndUpdate(
+    { telegramId: String(chatId) },
+    { $set: data },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
 };
 
 // ---------- Miniapp (do'kon) tugmasi ----------
@@ -198,9 +178,10 @@ export const initBot = () => {
   // ---------- /start ----------
   bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
-    const existingUser = getUser(chatId);
 
     try {
+      const existingUser = await getUser(chatId);
+
       if (existingUser && existingUser.step === "done") {
         userState.delete(chatId);
         await setUserCommands(chatId, existingUser.lang);
@@ -213,7 +194,14 @@ export const initBot = () => {
         return;
       }
 
-      // Yangi foydalanuvchi — tildan boshlaymiz
+      // Yangi foydalanuvchi (yoki oldin to'liq ro'yxatdan o'tmagan) — tildan boshlaymiz.
+      // Shu yerda darhol bazaga yozamiz: shunda "start" bosganlar soni to'g'ri hisoblanadi,
+      // hatto foydalanuvchi ism/telefon bosqichini tugatmasa ham.
+      await saveUser(chatId, {
+        username: msg.from?.username || "",
+        step: "lang",
+      });
+
       userState.set(chatId, { step: "lang" });
       await bot.sendMessage(chatId, TEXTS.uz.chooseLang, {
         reply_markup: {
@@ -233,7 +221,7 @@ export const initBot = () => {
   // ---------- /menu — miniapp ochish ----------
   bot.onText(/\/menu/, async (msg) => {
     const chatId = msg.chat.id;
-    const user = getUser(chatId);
+    const user = await getUser(chatId);
 
     if (!user || user.step !== "done") {
       await bot.sendMessage(chatId, t("uz", "notRegistered"));
@@ -263,7 +251,7 @@ export const initBot = () => {
   // ---------- /contact — statik bog'lanish ma'lumotini chiqarish ----------
   bot.onText(/\/contact/, async (msg) => {
     const chatId = msg.chat.id;
-    const user = getUser(chatId);
+    const user = await getUser(chatId);
     const lang = user?.lang || "uz";
 
     await sendContactInfo(chatId, lang);
@@ -287,8 +275,8 @@ export const initBot = () => {
 
         // /language orqali kelgan bo'lsa — faqat tilni yangilab qo'yamiz
         if (state?.step === "choose_lang_only") {
-          const user = getUser(chatId);
-          if (user) saveUser(chatId, { lang });
+          const user = await getUser(chatId);
+          if (user) await saveUser(chatId, { lang });
           userState.delete(chatId);
           await setUserCommands(chatId, lang);
           await bot.sendMessage(
@@ -300,6 +288,7 @@ export const initBot = () => {
         }
 
         // Birinchi marta ro'yxatdan o'tish jarayoni
+        await saveUser(chatId, { lang, step: "name" });
         userState.set(chatId, { step: "name", lang });
         await bot.sendMessage(chatId, t(lang, "askName"));
       } catch (error) {
@@ -309,7 +298,7 @@ export const initBot = () => {
     }
 
     if (data === "order_click") {
-      const user = getUser(chatId);
+      const user = await getUser(chatId);
       const lang = user?.lang || "uz";
       await bot.answerCallbackQuery(query.id);
       await sendShopButton(chatId, lang);
@@ -320,7 +309,7 @@ export const initBot = () => {
   bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
-    const user = getUser(chatId);
+    const user = await getUser(chatId);
 
     // ---------- Mini App'dan savat + manzil (zakaz) ma'lumoti kelganda ----------
     // Endi Mini App ichida foydalanuvchi manzilni xaritada tasdiqlab bo'lgach,
@@ -426,6 +415,7 @@ export const initBot = () => {
       userState.set(chatId, { ...state, step: "phone", name });
 
       try {
+        await saveUser(chatId, { name, step: "phone" });
         await bot.sendMessage(chatId, t(state.lang, "askPhone", { name }), {
           reply_markup: {
             keyboard: [[{ text: t(state.lang, "shareContact"), request_contact: true }]],
@@ -458,10 +448,10 @@ export const initBot = () => {
     const name = state.name;
     const lang = state.lang;
 
-    saveUser(chatId, { lang, name, phone, step: "done" });
-    userState.delete(chatId);
-
     try {
+      await saveUser(chatId, { lang, name, phone, step: "done" });
+      userState.delete(chatId);
+
       await bot.sendMessage(
         chatId,
         t(lang, "accessGranted", { name }),
@@ -488,4 +478,4 @@ export const notifyUser = async (telegramId, text) => {
 };
 
 export const getBot = () => bot;
-export const getSavedUser = (chatId) => getUser(chatId);
+export const getSavedUser = async (chatId) => getUser(chatId);

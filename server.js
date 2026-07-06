@@ -13,6 +13,7 @@ import productRoutes from "./routes/productRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
 import analyticsRoutes from "./routes/analyticsRoutes.js";
 import publicRoutes from "./routes/publicRoutes.js";
+import userRoutes from "./routes/userRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,6 +34,7 @@ app.use("/api/products", productRoutes); // admin: 2,3-chi page
 app.use("/api/orders", orderRoutes); // admin: 4,5-chi page
 app.use("/api/analytics", analyticsRoutes); // admin: 1-chi page (home)
 app.use("/api/public", publicRoutes); // miniapp: mahsulotlar + zakaz berish
+app.use("/api/users", userRoutes); // admin: foydalanuvchilar statistikasi
 
 app.get("/", (req, res) => {
   res.json({ message: "Clothing shop backend ishlayapti" });
