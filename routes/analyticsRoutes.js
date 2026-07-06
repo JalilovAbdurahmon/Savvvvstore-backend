@@ -38,7 +38,7 @@ router.get("/summary", protect, async (req, res) => {
     const topProducts = allProducts
       .map((p) => {
         const sales = salesMap[String(p._id)] || { quantity: 0, revenue: 0 };
-        return { name: p.name, quantity: sales.quantity, revenue: sales.revenue };
+        return { name: p.name, image: p.image, quantity: sales.quantity, revenue: sales.revenue };
       })
       .sort((a, b) => b.quantity - a.quantity);
 
