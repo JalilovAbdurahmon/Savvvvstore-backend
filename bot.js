@@ -368,7 +368,7 @@ export const initBot = () => {
       }
 
       // Google'ning rasmiy universal-link formati — mobil va web'da bir xil ishonchli ochiladi
-      const mapLink = `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
+      const mapLink = `https://maps.google.com/?q=${latitude},${longitude}`;
 
       const totalPrice = payload.items.reduce(
         (sum, item) => sum + item.price * (item.quantity || 1),
