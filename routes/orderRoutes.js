@@ -1,26 +1,28 @@
 import express from "express";
 import Order from "../models/Order.js";
 import { protect } from "../middleware/auth.js";
-import { notifyUser } from "../bot.js";
+import { notifyOrderCompleted, notifyOrderCancelled } from "../bot.js";
 
 const router = express.Router();
 
 router.use(protect);
 
-// GET /api/orders  (4-chi page: yangi/kutilayotgan zakazlar)
 router.get("/", async (req, res) => {
   try {
-    const orders = await Order.find({ status: "pending" }).sort({ createdAt: -1 });
+    const orders = await Order.find({ status: "pending" }).sort({
+      createdAt: -1,
+    });
     res.json(orders);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
 
-// GET /api/orders/history  (5-chi page: bajarilgan zakazlar tarixi)
 router.get("/history", async (req, res) => {
   try {
-    const orders = await Order.find({ status: { $in: ["completed", "cancelled"] } }).sort({
+    const orders = await Order.find({
+      status: { $in: ["completed", "cancelled"] },
+    }).sort({
       completedAt: -1,
     });
     res.json(orders);
@@ -29,7 +31,6 @@ router.get("/history", async (req, res) => {
   }
 });
 
-// PUT /api/orders/:id/complete  ("Bajarildi / выполнено" bosilganda 4-page'dan 5-page'ga o'tadi)
 router.put("/:id/complete", async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
@@ -39,7 +40,7 @@ router.put("/:id/complete", async (req, res) => {
     order.completedAt = new Date();
     await order.save();
 
-    notifyUser(order.telegramId, `📦 Buyurtmangiz yetkazib berildi! Xaridingiz uchun rahmat. 🙏`);
+    notifyOrderCompleted(order.telegramId);
 
     res.json(order);
   } catch (error) {
@@ -47,7 +48,6 @@ router.put("/:id/complete", async (req, res) => {
   }
 });
 
-// PUT /api/orders/:id/cancel
 router.put("/:id/cancel", async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
@@ -57,13 +57,14 @@ router.put("/:id/cancel", async (req, res) => {
     order.completedAt = new Date();
     await order.save();
 
+    notifyOrderCancelled(order.telegramId);
+
     res.json(order);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
 
-// DELETE /api/orders/:id  (History page'dan zakazni butunlay o'chirish)
 router.delete("/:id", async (req, res) => {
   try {
     const order = await Order.findByIdAndDelete(req.params.id);

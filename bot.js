@@ -78,7 +78,7 @@ const TEXTS = {
     menuContact: "Kontakt",
     contactInfo:
       "☎️ Biz bilan bog'lanish:\n\n📞 Telefon: {phone}\n💬 Telegram: {username}\n🕐 Ish vaqti: {hours}",
-    // Endi manzil {address} shu yerdan olib tashlandi — alohida HTML link sifatida qo'shiladi
+    // Manzil {address} shu yerdan olib tashlangan — alohida HTML link sifatida qo'shiladi
     orderPlaced:
       "✅ Buyurtmangiz qabul qilindi!\n\n💰 Jami summa: {total} so'm\nTez orada siz bilan bog'lanamiz.",
     viewOnMap: "📍 Xaritada ko'rish",
@@ -87,6 +87,12 @@ const TEXTS = {
     cartEmpty: "Savat bo'sh, avval Menyudan mahsulot tanlang.",
     locationMissing:
       "❌ Manzil aniqlanmadi. Iltimos, Menyuga qayting va buyurtmani xaritada manzilni tasdiqlab qayta yuboring.",
+    // Buyurtma "bajarildi" deb belgilanganda foydalanuvchiga yuboriladigan xabar
+    orderCompletedNotify:
+      "📦 Buyurtmangiz yetkazib berildi! Xaridingiz uchun rahmat. 🙏",
+    // Buyurtma bekor qilinganda foydalanuvchiga yuboriladigan xabar
+    orderCancelledNotify:
+      "❌ Afsuski, buyurtmangiz bekor qilindi. Savol bo'lsa, biz bilan bog'laning.",
   },
   ru: {
     chooseLang: "Tilni tanlang / Выберите язык:",
@@ -107,7 +113,7 @@ const TEXTS = {
     menuContact: "Контакт",
     contactInfo:
       "☎️ Связаться с нами:\n\n📞 Телефон: {phone}\n💬 Telegram: {username}\n🕐 Время работы:\n{hours}",
-    // Endi manzil {address} shu yerdan olib tashlandi — alohida HTML link sifatida qo'shiladi
+    // Manzil {address} shu yerdan olib tashlangan — alohida HTML link sifatida qo'shiladi
     orderPlaced:
       "✅ Ваш заказ принят!\n\n💰 Общая сумма: {total} сум\nМы скоро свяжемся с вами.",
     viewOnMap: "📍 Посмотреть на карте",
@@ -115,6 +121,11 @@ const TEXTS = {
     cartEmpty: "Корзина пуста, сначала выберите товар в Меню.",
     locationMissing:
       "❌ Адрес не определён. Вернитесь в Меню и подтвердите адрес на карте, затем отправьте заказ снова.",
+    // Buyurtma "bajarildi" deb belgilanganda foydalanuvchiga yuboriladigan xabar
+    orderCompletedNotify: "📦 Ваш заказ доставлен! Спасибо за покупку. 🙏",
+    // Buyurtma bekor qilinganda foydalanuvchiga yuboriladigan xabar
+    orderCancelledNotify:
+      "❌ К сожалению, ваш заказ был отменён. Если есть вопросы — свяжитесь с нами.",
   },
 };
 
@@ -367,7 +378,7 @@ export const initBot = () => {
         return;
       }
 
-      // Google'ning rasmiy universal-link formati — mobil va web'da bir xil ishonchli ochiladi
+      // Google'ning klassik "q=" formati — doimiy pin qo'yadi, zoom/pan qilinsa ham yo'qolmaydi
       const mapLink = `https://maps.google.com/?q=${latitude},${longitude}`;
 
       const totalPrice = payload.items.reduce(
@@ -504,13 +515,47 @@ export const initBot = () => {
   return bot;
 };
 
-// Zakaz qabul qilinganda yoki holati o'zgarganda foydalanuvchiga xabar yuborish uchun
+// Zakaz qabul qilinganda yoki holati o'zgarganda ixtiyoriy (erkin matnli) xabar yuborish uchun.
+// Til bo'yicha avtomatik tanlanadigan xabarlar uchun quyidagi notifyOrderCompleted /
+// notifyOrderCancelled funksiyalaridan foydalaning.
 export const notifyUser = async (telegramId, text) => {
   if (!bot) return;
   try {
     await bot.sendMessage(telegramId, text);
   } catch (error) {
     console.error("Foydalanuvchiga xabar yuborishda xatolik:", error.message);
+  }
+};
+
+// Buyurtma "bajarildi" deb belgilanganda — foydalanuvchining bazada saqlangan
+// tiliga (lang) qarab, mos tildagi xabarni avtomatik yuboradi
+export const notifyOrderCompleted = async (telegramId) => {
+  if (!bot) return;
+  try {
+    const user = await User.findOne({ telegramId: String(telegramId) });
+    const lang = user?.lang || "uz";
+    await bot.sendMessage(telegramId, t(lang, "orderCompletedNotify"));
+  } catch (error) {
+    console.error(
+      "Buyurtma bajarilishi haqida xabar yuborishda xatolik:",
+      error.message
+    );
+  }
+};
+
+// Buyurtma bekor qilinganda — foydalanuvchining bazada saqlangan tiliga
+// qarab, mos tildagi xabarni avtomatik yuboradi
+export const notifyOrderCancelled = async (telegramId) => {
+  if (!bot) return;
+  try {
+    const user = await User.findOne({ telegramId: String(telegramId) });
+    const lang = user?.lang || "uz";
+    await bot.sendMessage(telegramId, t(lang, "orderCancelledNotify"));
+  } catch (error) {
+    console.error(
+      "Buyurtma bekor qilinishi haqida xabar yuborishda xatolik:",
+      error.message
+    );
   }
 };
 
