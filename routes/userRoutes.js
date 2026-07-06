@@ -25,4 +25,20 @@ router.get("/", protect, async (req, res) => {
   }
 });
 
+// DELETE /api/users/:id — foydalanuvchini bazadan o'chirish
+router.delete("/:id", protect, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ message: "Foydalanuvchi topilmadi" });
+    }
+
+    await user.deleteOne();
+
+    res.json({ message: "Foydalanuvchi o'chirildi" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 export default router;
