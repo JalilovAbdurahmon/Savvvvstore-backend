@@ -18,7 +18,13 @@ const orderSchema = new mongoose.Schema(
     username: { type: String },
     firstName: { type: String },
     phone: { type: String },
+    // Manzil matni (Mini App reverse-geocode qilgan bo'lsa) — faqat ko'rsatish uchun,
+    // ixtiyoriy. Google Maps linki endi shu maydonga emas, lat/lng'ga tayanadi.
     address: { type: String },
+    // Xaritadagi aniq koordinata — Google Maps linkini shundan quramiz,
+    // shunda link har doim ishonchli va bir xil formatda bo'ladi
+    latitude: { type: Number },
+    longitude: { type: Number },
     items: { type: [orderItemSchema], required: true },
     totalPrice: { type: Number, required: true },
     status: {

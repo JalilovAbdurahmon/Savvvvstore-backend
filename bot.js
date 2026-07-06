@@ -23,11 +23,15 @@ const saveUser = async (chatId, data) => {
 };
 
 // ---------- Miniapp (do'kon) tugmasi ----------
-const isMiniAppUrlValid = (url) => Boolean(url) && url.startsWith("https://") && url !== "https://yourdomain.com";
+const isMiniAppUrlValid = (url) =>
+  Boolean(url) &&
+  url.startsWith("https://") &&
+  url !== "https://yourdomain.com";
 
 // Foydalanuvchi botda tanlagan tilni Mini App'ga ?lang= orqali uzatamiz,
 // shunda Mini App ham bot bilan bir xil tilda ochiladi
-const buildMiniAppUrl = (baseUrl, lang) => `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}lang=${lang}`;
+const buildMiniAppUrl = (baseUrl, lang) =>
+  `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}lang=${lang}`;
 
 // Muhim: Mini App faqat "Keyboard button" (persistent reply keyboard) orqali ochilganda
 // tg.sendData() ishlaydi (Telegram cheklovi). Shuning uchun /menu, order_click va h.k.
@@ -74,9 +78,12 @@ const TEXTS = {
     menuContact: "Kontakt",
     contactInfo:
       "☎️ Biz bilan bog'lanish:\n\n📞 Telefon: {phone}\n💬 Telegram: {username}\n🕐 Ish vaqti: {hours}",
+    // Endi manzil {address} shu yerdan olib tashlandi — alohida HTML link sifatida qo'shiladi
     orderPlaced:
-      "✅ Buyurtmangiz qabul qilindi!\n\n📍 Manzil: {address}\n💰 Jami summa: {total} so'm\nTez orada siz bilan bog'lanamiz.",
-    orderError: "❌ Buyurtmani saqlashda xatolik yuz berdi. Iltimos, qayta urinib ko'ring.",
+      "✅ Buyurtmangiz qabul qilindi!\n\n💰 Jami summa: {total} so'm\nTez orada siz bilan bog'lanamiz.",
+    viewOnMap: "📍 Xaritada ko'rish",
+    orderError:
+      "❌ Buyurtmani saqlashda xatolik yuz berdi. Iltimos, qayta urinib ko'ring.",
     cartEmpty: "Savat bo'sh, avval Menyudan mahsulot tanlang.",
     locationMissing:
       "❌ Manzil aniqlanmadi. Iltimos, Menyuga qayting va buyurtmani xaritada manzilni tasdiqlab qayta yuboring.",
@@ -100,8 +107,10 @@ const TEXTS = {
     menuContact: "Контакт",
     contactInfo:
       "☎️ Связаться с нами:\n\n📞 Телефон: {phone}\n💬 Telegram: {username}\n🕐 Время работы:\n{hours}",
+    // Endi manzil {address} shu yerdan olib tashlandi — alohida HTML link sifatida qo'shiladi
     orderPlaced:
-      "✅ Ваш заказ принят!\n\n📍 Адрес: {address}\n💰 Общая сумма: {total} сум\nМы скоро свяжемся с вами.",
+      "✅ Ваш заказ принят!\n\n💰 Общая сумма: {total} сум\nМы скоро свяжемся с вами.",
+    viewOnMap: "📍 Посмотреть на карте",
     orderError: "❌ Ошибка при сохранении заказа. Попробуйте ещё раз.",
     cartEmpty: "Корзина пуста, сначала выберите товар в Меню.",
     locationMissing:
@@ -123,14 +132,20 @@ const mainKeyboard = (lang) => {
   const miniAppUrl = process.env.MINIAPP_URL;
 
   const shopButton = isMiniAppUrlValid(miniAppUrl)
-    ? { text: `🛍 ${t(lang, "menuShop")}`, web_app: { url: buildMiniAppUrl(miniAppUrl, lang) } }
+    ? {
+        text: `🛍 ${t(lang, "menuShop")}`,
+        web_app: { url: buildMiniAppUrl(miniAppUrl, lang) },
+      }
     : { text: `🛍 ${t(lang, "menuShop")}` }; // MINIAPP_URL hali sozlanmagan bo'lsa, oddiy tugma qoladi
 
   return {
     reply_markup: {
       keyboard: [
         [shopButton],
-        [{ text: `🌐 ${t(lang, "menuLang")}` }, { text: `📞 ${t(lang, "menuContact")}` }],
+        [
+          { text: `🌐 ${t(lang, "menuLang")}` },
+          { text: `📞 ${t(lang, "menuContact")}` },
+        ],
       ],
       resize_keyboard: true,
       // is_persistent: true,
@@ -185,7 +200,10 @@ export const initBot = () => {
       if (existingUser && existingUser.step === "done") {
         userState.delete(chatId);
         await setUserCommands(chatId, existingUser.lang);
-        await bot.sendMessage(chatId, t(existingUser.lang, "alreadyRegistered"));
+        await bot.sendMessage(
+          chatId,
+          t(existingUser.lang, "alreadyRegistered")
+        );
         await bot.sendMessage(
           chatId,
           t(existingUser.lang, "mainMenu"),
@@ -329,20 +347,28 @@ export const initBot = () => {
         return;
       }
 
-      if (!payload?.items || !Array.isArray(payload.items) || payload.items.length === 0) {
+      if (
+        !payload?.items ||
+        !Array.isArray(payload.items) ||
+        payload.items.length === 0
+      ) {
         await bot.sendMessage(chatId, t(user.lang, "cartEmpty"));
         return;
       }
 
-      const { latitude, longitude, address: addressText } = payload.location || {};
+      const {
+        latitude,
+        longitude,
+        address: addressText,
+      } = payload.location || {};
       if (typeof latitude !== "number" || typeof longitude !== "number") {
         // Mini App manzilni tasdiqlamasdan yubormasligi kerak, lekin himoya uchun tekshiramiz
         await bot.sendMessage(chatId, t(user.lang, "locationMissing"));
         return;
       }
 
-      const mapLink = `https://maps.google.com/?q=${latitude},${longitude}`;
-      const address = addressText ? `${addressText} (${mapLink})` : mapLink;
+      // Google'ning rasmiy universal-link formati — mobil va web'da bir xil ishonchli ochiladi
+      const mapLink = `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
 
       const totalPrice = payload.items.reduce(
         (sum, item) => sum + item.price * (item.quantity || 1),
@@ -355,23 +381,32 @@ export const initBot = () => {
           username: msg.from?.username || "",
           firstName: user.name || "", // ism — ro'yxatdan o'tishda saqlangan
           phone: user.phone || "", // telefon — ro'yxatdan o'tishda saqlangan
-          address, // manzil — Mini App xaritasida hozir tasdiqlangan
+          address: addressText || "", // faqat matn manzil (agar Mini App yuborgan bo'lsa)
+          latitude,
+          longitude,
           items: payload.items,
           totalPrice,
           status: "pending",
         });
 
+        const addressLabel = addressText || t(user.lang, "viewOnMap");
+        const orderMsg = t(user.lang, "orderPlaced", {
+          total: totalPrice.toLocaleString(),
+        });
+
+        // HTML parse_mode bilan — manzil har doim toza, bosiladigan link bo'lib chiqadi
         await bot.sendMessage(
           chatId,
-          t(user.lang, "orderPlaced", {
-            address: addressText || mapLink,
-            total: totalPrice.toLocaleString(),
-          }),
-          mainKeyboard(user.lang)
+          `${orderMsg}\n\n<a href="${mapLink}">${addressLabel}</a>`,
+          { parse_mode: "HTML", ...mainKeyboard(user.lang) }
         );
       } catch (error) {
         console.error("Zakaz yaratishda xatolik:", error.message);
-        await bot.sendMessage(chatId, t(user.lang, "orderError"), mainKeyboard(user.lang));
+        await bot.sendMessage(
+          chatId,
+          t(user.lang, "orderError"),
+          mainKeyboard(user.lang)
+        );
       }
       return;
     }
@@ -418,7 +453,9 @@ export const initBot = () => {
         await saveUser(chatId, { name, step: "phone" });
         await bot.sendMessage(chatId, t(state.lang, "askPhone", { name }), {
           reply_markup: {
-            keyboard: [[{ text: t(state.lang, "shareContact"), request_contact: true }]],
+            keyboard: [
+              [{ text: t(state.lang, "shareContact"), request_contact: true }],
+            ],
             resize_keyboard: true,
             one_time_keyboard: true,
           },
